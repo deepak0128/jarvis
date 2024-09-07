@@ -1,13 +1,23 @@
-from playsound import playsound 
-import eel
-from engine.command import speak
-from engine.config import ASSISTANT_NAME
 import os
-import pywhatkit as kit
+from pipes import quote
 import re
 import sqlite3
+import struct
+import subprocess
+import time
 import webbrowser
-#playing assistant sound function
+from playsound import playsound
+import eel
+import pyaudio
+import pyautogui
+from engine.command import speak
+from engine.config import ASSISTANT_NAME
+# Playing assiatnt sound function
+import pywhatkit as kit
+import pvporcupine
+from engine.helper import extract_yt_term, remove_words
+import pyautogui as autogui
+
 
 
 con = sqlite3.connect("jarvis.db")
@@ -60,11 +70,118 @@ def PlayYoutube(query):
     speak("Playing "+search_term+" on YouTube")
     kit.playonyt(search_term)        
 
+def hotword():
+    porcupine = None
+    paud = None
+    audio_stream = None
+    try:
+        # Initialize Porcupine with pre-trained keywords and higher sensitivity
+        porcupine = pvporcupine.create(keywords=["jarvis", "alexa"], sensitivities=[0.8, 0.8])
+        
+        # Initialize PyAudio stream with larger buffer size for better performance
+        paud = pyaudio.PyAudio()
+        audio_stream = paud.open(rate=porcupine.sample_rate,
+                                 channels=1,
+                                 format=pyaudio.paInt16,
+                                 input=True,
+                                 frames_per_buffer=1024)
 
-def extract_yt_term(command):
-    # Define a regular expression pattern to capture the song name
-    pattern = r'play\s+(.*?)\s+on\s+youtube'
-    # Use re.search to find the match in the command
-    match = re.search(pattern, command, re.IGNORECASE)
-    # If a match is found, return the extracted song name; otherwise, return None
-    return match.group(1) if match else None
+        print("Listening for hotwords...")
+
+        # Continuous loop for hotword detection
+        while True:
+            # Read a frame of audio from the microphone
+            audio_frame = audio_stream.read(porcupine.frame_length, exception_on_overflow=False)
+            
+            # Convert the raw audio data into the required format
+            audio_frame = struct.unpack_from("h" * porcupine.frame_length, audio_frame)
+            
+            # Process the audio frame to check for hotwords
+            keyword_index = porcupine.process(audio_frame)
+
+            # If a hotword is detected
+            if keyword_index >= 0:
+                print(f"Hotword detected! Keyword index: {keyword_index}")
+                
+                # Execute the shortcut key press (Win + J)
+                autogui.keyDown("win")
+                autogui.press("j")
+                autogui.keyUp("win")
+                
+                # Clear the audio buffer (to prevent delays on next detection)
+                audio_stream.stop_stream()
+                audio_stream.start_stream()
+                
+                # Very small delay to avoid immediate redetection
+                time.sleep(0.1)
+
+    except Exception as e:
+        print(f"An error occurred: {e}")
+    finally:
+        # Cleanup resources properly
+        if porcupine is not None:
+            porcupine.delete()
+        if audio_stream is not None:
+            audio_stream.close()
+        if paud is not None:
+            paud.terminate()
+
+def findContact(query):
+    
+    words_to_remove = [ASSISTANT_NAME, 'make', 'a', 'to', 'phone', 'call', 'send', 'message', 'wahtsapp', 'video']
+    query = remove_words(query, words_to_remove)
+
+    try:
+        query = query.strip().lower()
+        cursor.execute("SELECT mobile_no FROM contacts WHERE LOWER(name) LIKE ? OR LOWER(name) LIKE ?", ('%' + query + '%', query + '%'))
+        results = cursor.fetchall()
+        print(results[0][0])
+        mobile_number_str = str(results[0][0])
+
+        if not mobile_number_str.startswith('+91'):
+            mobile_number_str = '+91' + mobile_number_str
+
+        return mobile_number_str, query
+    except:
+        speak('not exist in contacts')
+        return 0, 0            
+
+def whatsApp(mobile_no, message, flag, name):
+    
+
+    if flag == 'message':
+        target_tab = 12
+        jarvis_message = "message send successfully to "+name
+
+    elif flag == 'call':
+        target_tab = 7
+        message = ''
+        jarvis_message = "calling to "+name
+
+    else:
+        target_tab = 6
+        message = ''
+        jarvis_message = "staring video call with "+name
+
+
+    # Encode the message for URL
+    encoded_message = quote(message)
+    print(encoded_message)
+    # Construct the URL
+    whatsapp_url = f"whatsapp://send?phone={mobile_no}&text={encoded_message}"
+
+    # Construct the full command
+    full_command = f'start "" "{whatsapp_url}"'
+
+    # Open WhatsApp with the constructed URL using cmd.exe
+    subprocess.run(full_command, shell=True)
+    time.sleep(5)
+    subprocess.run(full_command, shell=True)
+    
+    pyautogui.hotkey('ctrl', 'f')
+
+    for i in range(1, target_tab):
+        pyautogui.hotkey('tab')
+
+    pyautogui.hotkey('enter')
+    speak(jarvis_message)    
