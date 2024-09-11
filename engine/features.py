@@ -17,7 +17,7 @@ import pywhatkit as kit
 import pvporcupine
 from engine.helper import extract_yt_term, remove_words
 import pyautogui as autogui
-
+from hugchat import hugchat
 
 
 con = sqlite3.connect("jarvis.db")
@@ -185,3 +185,47 @@ def whatsApp(mobile_no, message, flag, name):
 
     pyautogui.hotkey('enter')
     speak(jarvis_message)    
+
+# chat bot 
+def chatBot(query):
+    user_input = query.lower()
+    chatbot = hugchat.ChatBot(cookie_path="engine\cookies.json")
+    id = chatbot.new_conversation()
+    chatbot.change_conversation(id)
+    response =  chatbot.chat(user_input)
+    print(response)
+    speak(response)
+    return response    
+
+# android automation
+
+def makeCall(name, mobileNo):
+    mobileNo =mobileNo.replace(" ", "")
+    speak("Calling "+name)
+    command = 'adb shell am start -a android.intent.action.CALL -d tel:'+mobileNo
+    os.system(command)
+    
+# to send message
+def sendMessage(message, mobileNo, name):
+    from engine.helper import replace_spaces_with_percent_s, goback, keyEvent, tapEvents, adbInput
+    message = replace_spaces_with_percent_s(message)
+    mobileNo = replace_spaces_with_percent_s(mobileNo)
+    speak("sending message")
+    goback(4)
+    time.sleep(1)
+    keyEvent(3)
+    # open sms app
+    tapEvents(330, 2145)
+    #start chat
+    tapEvents(940, 2083)
+    # search mobile no
+    adbInput(mobileNo)
+    #tap on name
+    tapEvents(319,617)
+    # tap on input
+    tapEvents(338, 1408)
+    #message
+    adbInput(message)
+    #send
+    tapEvents(948, 1390)
+    speak("message send successfully to "+name)    
